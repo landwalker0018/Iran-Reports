@@ -1,0 +1,537 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>伊朗局势简报 V2</title>
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #e9e4dc;
+    color: #17191c;
+    font-family: "PingFang SC", "Hiragino Sans GB", "STHeiti", "Noto Sans CJK SC", Arial, sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page {
+    width: 297mm;
+    height: 210mm;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+    background: #fbfaf6;
+    padding: 13mm 15mm;
+  }
+  .page:last-child { page-break-after: auto; }
+  .deck {
+    position: absolute;
+    left: 15mm;
+    right: 15mm;
+    bottom: 7mm;
+    display: flex;
+    justify-content: space-between;
+    color: #7b7268;
+    font-size: 8.5px;
+    letter-spacing: .02em;
+  }
+  .cover {
+    color: #fff;
+    padding: 0;
+    background:
+      linear-gradient(115deg, rgba(25, 24, 23, .25), transparent 42%),
+      radial-gradient(circle at 78% 22%, rgba(244, 178, 97, .28), transparent 28%),
+      linear-gradient(135deg, #7b1f22 0%, #a83a2a 48%, #d46529 100%);
+  }
+  .cover .grain {
+    position: absolute;
+    inset: 0;
+    opacity: .18;
+    background-image:
+      linear-gradient(30deg, transparent 0 48%, rgba(255,255,255,.5) 49%, transparent 50% 100%),
+      linear-gradient(150deg, transparent 0 48%, rgba(255,255,255,.35) 49%, transparent 50% 100%);
+    background-size: 38px 38px;
+  }
+  .cover-inner {
+    position: absolute;
+    inset: 15mm;
+    border: 1px solid rgba(255,255,255,.28);
+    padding: 17mm;
+  }
+  .kicker {
+    font-size: 12px;
+    color: #f5d7be;
+    text-transform: uppercase;
+    letter-spacing: .12em;
+  }
+  h1 {
+    margin: 7mm 0 0;
+    font-size: 45px;
+    line-height: 1.04;
+    font-weight: 750;
+    letter-spacing: 0;
+  }
+  .cover-sub {
+    margin-top: 7mm;
+    max-width: 148mm;
+    font-size: 17px;
+    line-height: 1.55;
+    color: #fff8ef;
+  }
+  .score-lockup {
+    position: absolute;
+    right: 17mm;
+    top: 18mm;
+    width: 52mm;
+    height: 52mm;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.72);
+    display: grid;
+    place-items: center;
+    text-align: center;
+    background: rgba(255,255,255,.08);
+  }
+  .score-lockup strong { display:block; font-size: 42px; line-height: .92; }
+  .score-lockup span { display:block; font-size: 10px; color:#ffe4cf; margin-top: 3px; }
+  .meta-strip {
+    position: absolute;
+    left: 17mm;
+    right: 17mm;
+    bottom: 17mm;
+    display: grid;
+    grid-template-columns: 1.2fr .8fr .8fr 1fr;
+    gap: 8px;
+  }
+  .meta {
+    background: rgba(255,255,255,.11);
+    border: 1px solid rgba(255,255,255,.22);
+    padding: 10px 12px;
+    min-height: 54px;
+  }
+  .meta small { display:block; color:#f2c5a5; font-size: 9px; margin-bottom: 5px; }
+  .meta b { font-size: 13px; font-weight: 650; }
+  .titlebar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 1.2px solid #d8cec2;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  .titlebar h2 {
+    margin: 0;
+    color: #8f2b25;
+    font-size: 22px;
+    line-height: 1.15;
+    letter-spacing: 0;
+  }
+  .titlebar .right {
+    font-size: 10px;
+    color: #766d63;
+    text-align: right;
+    line-height: 1.5;
+  }
+  .grid-3 { display: grid; grid-template-columns: 1.05fr 1fr 1fr; gap: 11px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .card {
+    background: #fff;
+    border: 1px solid #ddd4c8;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 6px 16px rgba(60, 43, 28, .05);
+  }
+  .card.dark {
+    background: #23262a;
+    color: #fff;
+    border-color: #23262a;
+  }
+  .card h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    color: #8f2b25;
+  }
+  .card.dark h3 { color: #f5bd90; }
+  .lead {
+    font-size: 16px;
+    line-height: 1.55;
+    font-weight: 650;
+  }
+  .point {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 8px;
+    font-size: 12px;
+    line-height: 1.55;
+    margin: 7px 0;
+  }
+  .num {
+    width: 21px;
+    height: 21px;
+    border-radius: 50%;
+    background: #a9362a;
+    color: #fff;
+    display: inline-grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .metric {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 5px 0 2px;
+  }
+  .metric b { font-size: 27px; color: #a9362a; }
+  .metric span { font-size: 11px; color: #71685f; }
+  .bar-row {
+    display: grid;
+    grid-template-columns: 34mm 1fr 14mm;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 11px;
+  }
+  .bar {
+    height: 8px;
+    border-radius: 20px;
+    background: #e9e1d8;
+    overflow: hidden;
+  }
+  .fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#d89929,#df6d2d,#a9362a); }
+  .tag {
+    display: inline-block;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: #f1e3d6;
+    color: #8f2b25;
+    font-size: 9.5px;
+    font-weight: 650;
+    margin: 2px 3px 2px 0;
+  }
+  .tag.green { background:#dfeee7; color:#267052; }
+  .tag.yellow { background:#fff1c9; color:#8a6616; }
+  .tag.red { background:#f5d6d1; color:#9b2d24; }
+  .timeline {
+    position: relative;
+    margin-top: 5px;
+    padding-left: 25px;
+  }
+  .timeline:before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 4px;
+    bottom: 5px;
+    width: 2px;
+    background: #d8cec2;
+  }
+  .event {
+    position: relative;
+    display: grid;
+    grid-template-columns: 30mm 1fr 25mm;
+    gap: 9px;
+    padding: 7px 0 9px;
+    border-bottom: 1px solid #eee7df;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .event:before {
+    content:"";
+    position:absolute;
+    left:-22px;
+    top: 10px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background:#df6d2d;
+    border:2px solid #fbfaf6;
+  }
+  .event .time { color:#8a7a6c; font-size: 10px; }
+  .event b { font-size: 12px; }
+  .pill {
+    align-self: start;
+    justify-self: end;
+    border: 1px solid #d8cec2;
+    padding: 3px 6px;
+    border-radius: 5px;
+    color: #8f2b25;
+    font-size: 9px;
+    font-weight: 650;
+  }
+  .hormuz {
+    height: 104mm;
+    position: relative;
+    background: linear-gradient(180deg,#f4efe7,#fff);
+    overflow:hidden;
+  }
+  .sea {
+    position:absolute;
+    inset: 13mm 8mm 12mm 8mm;
+  }
+  .legend {
+    display: grid;
+    gap: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .legend-item {
+    border-left: 4px solid #df6d2d;
+    padding-left: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10.3px;
+    line-height: 1.35;
+  }
+  th {
+    text-align: left;
+    background: #8f2b25;
+    color: white;
+    padding: 7px;
+    font-weight: 650;
+  }
+  td {
+    border: 1px solid #ddd4c8;
+    padding: 7px;
+    vertical-align: top;
+    background: #fff;
+  }
+  tr:nth-child(even) td { background: #fbf6ef; }
+  .watch {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 9px;
+  }
+  .watch .card { min-height: 34mm; }
+  .small { font-size: 10.3px; line-height: 1.45; color:#3c3c3c; }
+  .muted { color: #71685f; }
+  .source-list {
+    columns: 2;
+    column-gap: 16px;
+    font-size: 10px;
+    line-height: 1.45;
+  }
+  .source-list p { break-inside: avoid; margin: 0 0 8px; }
+  .stamp {
+    position:absolute;
+    top: 13mm;
+    right: 15mm;
+    border: 1.4px solid #a9362a;
+    color: #a9362a;
+    padding: 7px 10px;
+    border-radius: 6px;
+    transform: rotate(2deg);
+    font-size: 11px;
+    font-weight: 750;
+  }
+</style>
+</head>
+<body>
+  <section class="page cover">
+    <div class="grain"></div>
+    <div class="cover-inner">
+      <div class="kicker">OpenClaw-style briefing · Trial rebuild</div>
+      <h1>伊朗局势<br>48小时回溯简报</h1>
+      <div class="cover-sub">从“事件罗列”改成“决策态势板”：先给判断，再给证据、风险阀门和下一步观察指标。</div>
+      <div class="score-lockup"><div><strong>66</strong><span>烈度 / 100<br>中高位</span></div></div>
+      <div class="meta-strip">
+        <div class="meta"><small>锚点时间</small><b>2026-05-30 21:00 CST</b></div>
+        <div class="meta"><small>回溯窗口</small><b>48小时</b></div>
+        <div class="meta"><small>趋势</small><b>降温中带扰动</b></div>
+        <div class="meta"><small>主变量</small><b>霍尔木兹 + 核谈判</b></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="titlebar"><h2>01｜先读结论</h2><div class="right">信息窗口：2026-05-28 21:00 -> 2026-05-30 21:00 CST<br>对应纽约时间：2026-05-28 09:00 -> 2026-05-30 09:00 ET</div></div>
+    <div class="grid-3">
+      <div class="card dark">
+        <h3>一句话结论</h3>
+        <div class="lead">协议预期正在压低市场烈度，但霍尔木兹通航安排仍没有被事实验证。</div>
+        <p class="small muted" style="color:#d2c7ba">这意味着简报不能写成“局势已缓和”，更准确的是“谈判定价领先于安全现实”。</p>
+      </div>
+      <div class="card">
+        <h3>三条核心判断</h3>
+        <div class="point"><span class="num">1</span><span>主线从军事升级转向谈判定价，白宫讨论协议但未最终宣布批准。</span></div>
+        <div class="point"><span class="num">2</span><span>霍尔木兹是协议成败核心变量：通航、清雷、收费、封锁解除彼此绑定。</span></div>
+        <div class="point"><span class="num">3</span><span>油价提前反映乐观预期，但实际航运恢复仍需船东、保险与军方安全机制确认。</span></div>
+      </div>
+      <div class="card">
+        <h3>读者该盯什么</h3>
+        <span class="tag red">白宫最终口径</span>
+        <span class="tag red">伊朗外交部确认</span>
+        <span class="tag">霍尔木兹清雷</span>
+        <span class="tag">通航船只数量</span>
+        <span class="tag yellow">Brent 90/100</span>
+        <span class="tag green">第三方斡旋</span>
+        <p class="small">若没有“双方正式声明 + 通航数据回升”，市场降温只能视为预期交易，不是风险解除。</p>
+      </div>
+    </div>
+    <div style="height:10px"></div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>烈度拆解</h3>
+        <div class="bar-row"><span>军事行动</span><div class="bar"><div class="fill" style="width:65%"></div></div><b>13/20</b></div><div class="bar-row"><span>战略升级</span><div class="bar"><div class="fill" style="width:60%"></div></div><b>9/15</b></div><div class="bar-row"><span>霍尔木兹/航运</span><div class="bar"><div class="fill" style="width:80%"></div></div><b>12/15</b></div><div class="bar-row"><span>核谈判</span><div class="bar"><div class="fill" style="width:67%"></div></div><b>10/15</b></div><div class="bar-row"><span>能源市场</span><div class="bar"><div class="fill" style="width:60%"></div></div><b>6/10</b></div><div class="bar-row"><span>制裁经济</span><div class="bar"><div class="fill" style="width:75%"></div></div><b>6/8</b></div><div class="bar-row"><span>国内稳定</span><div class="bar"><div class="fill" style="width:43%"></div></div><b>3/7</b></div><div class="bar-row"><span>第三方斡旋</span><div class="bar"><div class="fill" style="width:70%"></div></div><b>7/10</b></div>
+      </div>
+      <div class="card">
+        <h3>证据强弱分层</h3>
+        <table>
+          <tr><th>层级</th><th>用途</th><th>本次样例</th></tr>
+          <tr><td>A</td><td>可作为事实底座</td><td>AP、CENTCOM、U.S. Treasury、新华网</td></tr>
+          <tr><td>B</td><td>补充现场和解释分歧</td><td>Reuters/MarketScreener、Anadolu/IRNA转述</td></tr>
+          <tr><td>D</td><td>只能表示市场情绪</td><td>Polymarket 相关合约价格</td></tr>
+        </table>
+        <p class="small">重大结论只基于 A/B 层；D 层不单独确认事实。</p>
+      </div>
+    </div>
+    <div class="deck"><span>Iran Briefing V2</span><span>1 / 5</span></div>
+  </section>
+
+  <section class="page">
+    <div class="titlebar"><h2>02｜48小时事件链</h2><div class="right">排序规则：按发生/报道进入窗口时间倒序整合<br>重点：识别哪些是事实，哪些是协议解释权争夺</div></div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>事件时间轴</h3>
+        <div class="timeline">
+          <div class="event"><div class="time">5/29 22:13 CST</div><div><b>白宫讨论是否批准美伊协议</b><br>AP称特朗普与国家安全团队讨论延长停火和重开霍尔木兹，会后高级官员称尚无决定。</div><div class="pill">外交 A</div></div>
+          <div class="event"><div class="time">5/29-5/30</div><div><b>霍尔木兹条款出现解释分歧</b><br>美方口径强调无收费通航和清雷；伊朗方面称尚未达成最终理解，并否认部分条款解释。</div><div class="pill">航运 B</div></div>
+          <div class="event"><div class="time">5/28 起</div><div><b>美国财政部继续施压</b><br>目标指向伊朗军方油品收入及与霍尔木兹收费相关机制。</div><div class="pill">制裁 A</div></div>
+          <div class="event"><div class="time">5/28 前后</div><div><b>小规模军事摩擦延续</b><br>CENTCOM、新华网信息显示，无人机、导弹、空袭和反击仍存在。</div><div class="pill">军事 A/B</div></div>
+          <div class="event"><div class="time">5/30 早间</div><div><b>油价明显回落</b><br>Brent 收于 92.05 美元/桶，周跌约 11%，市场押注协议。</div><div class="pill">市场 A</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>本窗口的真正矛盾</h3>
+        <table>
+          <tr><th>表层事件</th><th>深层问题</th><th>简报写法</th></tr>
+          <tr><td>停火延长接近</td><td>协议是否已被双方政治授权</td><td>“接近但未完成”</td></tr>
+          <tr><td>海峡重开</td><td>通航规则、收费权、清雷责任</td><td>“通航安排是核心交换项”</td></tr>
+          <tr><td>油价回落</td><td>预期交易领先于物理通航</td><td>“市场降温不等于供应链恢复”</td></tr>
+          <tr><td>低烈度冲突</td><td>谈判筹码与误判风险并存</td><td>“军事端没有完全停火”</td></tr>
+        </table>
+        <div style="height:8px"></div>
+        <div class="card" style="box-shadow:none;background:#fff7eb">
+          <h3>一句编辑原则</h3>
+          <p class="small">不要把“美方透露的协议草案”写成“美伊共同确认的最终协议”；这是本简报质量的分水岭。</p>
+        </div>
+      </div>
+    </div>
+    <div class="deck"><span>Iran Briefing V2</span><span>2 / 5</span></div>
+  </section>
+
+  <section class="page">
+    <div class="titlebar"><h2>03｜霍尔木兹：风险阀门</h2><div class="right">核心判断：通航安排决定能源风险溢价<br>不是“有没有协议”，而是“船敢不敢走”</div></div>
+    <div class="grid-2">
+      <div class="card hormuz">
+        <h3>抽象态势图</h3>
+        <svg class="sea" viewBox="0 0 720 300" aria-label="Hormuz schematic">
+          <defs>
+            <linearGradient id="water" x1="0" x2="1"><stop offset="0%" stop-color="#d7e6ed"/><stop offset="100%" stop-color="#b9d4e0"/></linearGradient>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2f6f8f"/></marker>
+          </defs>
+          <rect x="0" y="0" width="720" height="300" rx="18" fill="url(#water)"/>
+          <path d="M0 35 C130 76, 195 99, 300 108 C420 118, 520 85, 720 42 L720 0 L0 0 Z" fill="#e8d0a8"/>
+          <path d="M0 260 C180 215, 300 205, 410 218 C530 232, 620 255, 720 238 L720 300 L0 300 Z" fill="#dec39a"/>
+          <path d="M105 187 C220 136, 355 132, 510 156" fill="none" stroke="#2f6f8f" stroke-width="7" stroke-linecap="round" marker-end="url(#arrow)"/>
+          <path d="M98 205 C260 164, 404 166, 575 188" fill="none" stroke="#2f6f8f" stroke-width="3" stroke-dasharray="8 8" opacity=".65"/>
+          <circle cx="360" cy="151" r="36" fill="rgba(169,54,42,.16)" stroke="#a9362a" stroke-width="2"/>
+          <text x="360" y="145" text-anchor="middle" font-size="15" fill="#8f2b25" font-weight="700">通航</text>
+          <text x="360" y="165" text-anchor="middle" font-size="12" fill="#8f2b25">清雷/收费/封锁</text>
+          <text x="72" y="58" font-size="16" fill="#6f4f2c" font-weight="700">伊朗岸线</text>
+          <text x="560" y="267" font-size="16" fill="#6f4f2c" font-weight="700">阿曼/海湾通道</text>
+          <rect x="510" y="48" width="150" height="44" rx="9" fill="#fff7eb" stroke="#d8b68f"/>
+          <text x="585" y="74" text-anchor="middle" font-size="13" fill="#6f4f2c">协议预期降温油价</text>
+          <rect x="42" y="222" width="170" height="44" rx="9" fill="#fff7eb" stroke="#d8b68f"/>
+          <text x="127" y="248" text-anchor="middle" font-size="13" fill="#6f4f2c">实际通航尚待验证</text>
+        </svg>
+      </div>
+      <div>
+        <div class="card">
+          <h3>四个卡点</h3>
+          <div class="legend">
+            <div class="legend-item"><b>通航权：</b>是否无收费、无额外政治条件开放。</div>
+            <div class="legend-item"><b>安全责任：</b>清雷、护航、误击责任如何分配。</div>
+            <div class="legend-item"><b>制裁节奏：</b>港口封锁与油品金融限制何时解除。</div>
+            <div class="legend-item"><b>市场验证：</b>船东、保险和能源买家是否恢复常态路径。</div>
+          </div>
+        </div>
+        <div style="height:10px"></div>
+        <div class="card">
+          <h3>能源端写法</h3>
+          <table>
+            <tr><th>指标</th><th>本窗口</th><th>解读</th></tr>
+            <tr><td>Brent</td><td>92.05 美元/桶</td><td>周跌约 11%，反映协议预期</td></tr>
+            <tr><td>WTI</td><td>87.36 美元/桶</td><td>同步回落</td></tr>
+            <tr><td>通航量</td><td>仍低于战前</td><td>风险没有真正出清</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="deck"><span>Iran Briefing V2</span><span>3 / 5</span></div>
+  </section>
+
+  <section class="page">
+    <div class="titlebar"><h2>04｜情景推演与观察清单</h2><div class="right">用途：让读者知道下一份简报该验证什么<br>概率不足时，用等级替代虚假精确数字</div></div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>三情景</h3>
+        <table>
+          <tr><th>情景</th><th>等级</th><th>触发条件</th><th>市场/安全含义</th></tr>
+          <tr><td>缓和落地</td><td>中高</td><td>双方同步确认；清雷与解除封锁启动</td><td>油价继续回落，航运逐步恢复</td></tr>
+          <tr><td>僵持延长</td><td>中</td><td>继续交换文本但核材料、收费、黎巴嫩条件未解决</td><td>油价区间震荡，军事端维持低烈度</td></tr>
+          <tr><td>再升级</td><td>中低</td><td>扣船、袭船、误击或以黎方向扩大</td><td>保险费率跳升，Brent 快速反弹</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3>结论矩阵</h3>
+        <table>
+          <tr><th>结论</th><th>置信度</th><th>依据</th></tr>
+          <tr><td>协议接近但未完成</td><td>高</td><td>AP与伊朗公开口径均未确认最终协议</td></tr>
+          <tr><td>霍尔木兹是核心交换项</td><td>高</td><td>通航、清雷、收费、制裁同步出现</td></tr>
+          <tr><td>军事端没有完全停火</td><td>中高</td><td>CENTCOM、新华网均有摩擦线索</td></tr>
+          <tr><td>油价回落是预期交易</td><td>高</td><td>通航恢复尚未被实际数据确认</td></tr>
+        </table>
+      </div>
+    </div>
+    <div style="height:10px"></div>
+    <div class="watch">
+      <div class="card"><h3>官方口径</h3><p class="small">白宫、伊朗外交部、IAEA 是否发布可相互印证的正式文本。</p></div>
+      <div class="card"><h3>海峡数据</h3><p class="small">油轮通航数量、AIS异常、保险费率和清雷/护航安排。</p></div>
+      <div class="card"><h3>军事误判</h3><p class="small">CENTCOM、IRGC、以色列和黎巴嫩方向是否出现新攻击。</p></div>
+      <div class="card"><h3>市场阈值</h3><p class="small">Brent 跌破 90 代表缓和定价延续；反弹 100 以上说明风险重估。</p></div>
+    </div>
+    <div class="deck"><span>Iran Briefing V2</span><span>4 / 5</span></div>
+  </section>
+
+  <section class="page">
+    <div class="stamp">试制版 · 需复核实时数据</div>
+    <div class="titlebar"><h2>05｜来源、边界与下一版改进</h2><div class="right">原则：来源可追溯，判断可拆解，传闻不落地</div></div>
+    <div class="grid-2">
+      <div class="card">
+        <h3>来源清单</h3>
+        <div class="source-list">
+          <p><b>AP</b>：Trump weighs whether to go with Iran deal but has not decided yet, 2026-05-29.</p>
+          <p><b>CENTCOM</b>：Statement from CENTCOM on Recent Iranian Aggression, 2026-05-28.</p>
+          <p><b>U.S. Treasury</b>：Economic Fury Targets Illicit Oil Revenue Fueling Iran's Military, 2026-05-28.</p>
+          <p><b>新华网</b>：新闻分析丨中东两线交火会否拖累美伊停火？2026-05-28.</p>
+          <p><b>Reuters / MarketScreener</b>：Oil falls on hopes for US-Iran ceasefire agreement, 2026-05-29.</p>
+          <p><b>Anadolu / IRNA 转述</b>：Iran says message exchanges with US continue, no final understanding reached, 2026-05-29.</p>
+          <p><b>Polymarket</b>：仅作为市场情绪参考，不作为事实确认。</p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>边界说明</h3>
+        <p class="small">本 PDF 是基于既有试制简报重新设计的版式与分析呈现。正式生产时，应在生成前重新抓取：Brent/WTI 实时价格、Polymarket 合约报价、霍尔木兹通航数据、官方声明原文。</p>
+        <h3>下一版应补强</h3>
+        <div class="point"><span class="num">1</span><span>加入自动来源抓取表：来源、发布时间、可信度、是否进入结论。</span></div>
+        <div class="point"><span class="num">2</span><span>加入上一窗口对比页：烈度变化、事件增减、市场指标变化。</span></div>
+        <div class="point"><span class="num">3</span><span>加入“可复制到飞书”的纯文本摘要页，方便交付。</span></div>
+      </div>
+    </div>
+    <div class="deck"><span>Iran Briefing V2</span><span>5 / 5</span></div>
+  </section>
+</body>
+</html>
