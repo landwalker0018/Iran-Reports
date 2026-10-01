@@ -16,13 +16,17 @@
     npm run check
     npm test
     npm run build
+    npm run build -- --date 2026-07-31
+    npm run build -- --date 2026-07-31_1300
     npm run build -- --input reports/iran-briefing-2026-07-31_1300.md
     npm run build -- --input reports/iran-briefing-2026-07-31_1300.md --html-only
     python scripts/build_iran_briefing_pdf.py --check
 
 参数：
 
-- --input：输入 Markdown；默认使用 2026-05-30 样稿。
+- --date：选择 YYYY-MM-DD 对应的当天最新一期，或使用 YYYY-MM-DD_HHMM 精确指定一期。
+- --input：直接指定输入 Markdown，与 --date 互斥。
+- 不指定 --date 和 --input 时，默认日期为运行时北京时间的今天（Asia/Shanghai），选择 reports/ 中当天最新一期。没有当天简报时明确报错，不回退到历史日期；可用 --date 或 --input 选择已有简报。
 - --out-dir：输出目录；默认 output/briefings/。
 - --html-only：只生成 HTML。
 - --check：只校验，不写入文件。
@@ -41,6 +45,8 @@
 - 烈度指数章节：八项维度及权重按制作框架的顺序排列，总分必须等于分项之和。
 
 生成器校验分数范围、总分、窗口、锚点、回溯长度和未填占位符。纽约时间在输出中按 America/New_York 自动重算，不改变输入文件。封面总分及等级来自分项计算。
+
+资料不足时，分项使用“未评分 / 权重”；标题使用“烈度 暂不评分”，总分使用“总分：暂不评分 / 100”。任何分项未评分时禁止显示数字总分，封面显示“待评估”，避免将缺失信息视为零风险。
 
 支持的 Markdown 子集为一至三级标题、段落、无序列表、表格、代码块、分隔线和裸 HTTP/HTTPS 链接。原始 HTML 会转义；不支持图片、复杂嵌套列表和内嵌 HTML。来源 URL 保留为可点击链接。
 

@@ -1,9 +1,9 @@
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const DEFAULT_INPUT = path.join(ROOT, 'reports/iran-briefing-2026-05-30_2100.md');
+const REPORTS_DIR = path.join(ROOT, 'reports');
 const WEIGHTS = [20, 15, 15, 15, 10, 8, 7, 10];
 const DIMENSIONS = ['军事行动', '战略升级信号', '霍尔木兹与航运', '核问题与外交谈判', '能源市场', '制裁与经济战', '国内稳定与信息环境', '第三方斡旋与外溢风险'];
 export function escapeHtml(value) {
@@ -25,7 +25,7 @@ function parseCst(value) {
 export function parseBriefing(markdown) {
   markdown = normalizeMarkdown(markdown);
   if (/\{\{[^}]*\}\}/.test(markdown)) throw new Error('简报中仍有未填写的占位符');
-  const title = /^# (\d{4}-\d{2}-\d{2})_(\d{4}) \|.*?烈度\s+(\d+)\s*\|\s*(.+)$/m.exec(markdown);
+  const title = /^# (\d{4}-\d{2}-\d{2})_(\d{4}) \|.*?烈度\s+(\d+|暂不评分)\s*\|\s*(.+)$/m.exec(markdown);
   if (!title) throw new Error('缺少报告标识：# YYYY-MM-DD_HHMM | 颜色 烈度 分数 | 趋势');
   const window = /^信息窗口：(.+?)\s*->\s*(.+?)\s+CST\s*$/m.exec(markdown);
   if (!window) throw new Error('缺少 CST 信息窗口');
@@ -39,17 +39,18 @@ export function parseBriefing(markdown) {
   if (!lookback || Number(lookback[1])*(lookback[2]==='d'?24:1) !== hours) throw new Error('回溯长度与信息窗口不一致');
   const scoreSection = /^## 烈度指数\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m.exec(markdown)?.[1];
   if (!scoreSection) throw new Error('缺少烈度指数章节');
-  const rows = [...scoreSection.matchAll(/^\|\s*([^|]+?)\s*\|\s*(\d+)\s*\/\s*(\d+)\s*\|/gm)]
-    .map(m => ({ name:m[1].trim(), score:Number(m[2]), max:Number(m[3]) }));
+  const rows = [...scoreSection.matchAll(/^\|\s*([^|]+?)\s*\|\s*(\d+|未评分)\s*\/\s*(\d+)\s*\|/gm)]
+    .map(m => ({ name:m[1].trim(), score:m[2]==='未评分'?null:Number(m[2]), max:Number(m[3]) }));
   if (rows.length !== WEIGHTS.length) throw new Error('烈度指数必须包含八个维度');
   rows.forEach((row,i) => {
     if (row.name !== DIMENSIONS[i] || row.max !== WEIGHTS[i] || row.score > row.max) throw new Error('烈度维度或分数无效：'+row.name);
   });
-  const score = rows.reduce((sum,row) => sum+row.score,0);
-  const stated = /总分：\s*(\d+)\s*\/\s*100/.exec(scoreSection);
-  if (!stated || Number(stated[1]) !== score || Number(title[3]) !== score) throw new Error('首页、总分与分项之和不一致；计算值为 '+score);
-  const level = score>=80?'高烈度':score>=60?'明显紧张':score>=40?'中等波动':'低烈度';
-  const color = score>=80?'#a7352a':score>=60?'#e46f2e':score>=40?'#c99722':'#2f8f6b';
+  const score = rows.some(row=>row.score===null)?null:rows.reduce((sum,row) => sum+row.score,0);
+  const stated = /总分：\s*(\d+|暂不评分)\s*\/\s*100/.exec(scoreSection);
+  const matchesScore=value=>score===null?value==='暂不评分':Number(value)===score;
+  if (!stated || !matchesScore(stated[1]) || !matchesScore(title[3])) throw new Error('首页、总分与分项之和不一致；计算值为 '+(score??'暂不评分'));
+  const level = score===null?'资料不足':score>=80?'高烈度':score>=60?'明显紧张':score>=40?'中等波动':'低烈度';
+  const color = score===null?'#68707a':score>=80?'#a7352a':score>=60?'#e46f2e':score>=40?'#c99722':'#2f8f6b';
   const summary = /^## 一句话结论\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m.exec(markdown)?.[1].trim();
   if (!summary) throw new Error('缺少一句话结论');
   return { id:title[1]+'_'+title[2], anchor, hours, start, end, score, rows, level, color, summary, trend:title[4].trim() };
@@ -108,8 +109,10 @@ export function renderBriefing(markdown) {
   const et=formatTime(data.start,'America/New_York')+' -> '+formatTime(data.end,'America/New_York')+' ET';
   let body=markdown.replace(/^信息窗口：.*$/gm,'信息窗口：'+cst).replace(/^对应纽约时间：.*$/gm,'对应纽约时间：'+et);
   body=body.replace(/^# .*\r?\n/gm,'');
-  const bars=data.rows.map(r=>'<div class="bar-row"><span>'+escapeHtml(r.name)+'</span><div class="bar"><div style="width:'+r.score/r.max*100+'%;background:'+data.color+'"></div></div><b>'+r.score+'/'+r.max+'</b></div>').join('');
-  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>伊朗局势简报 '+data.id+'</title><style>'+CSS+'</style></head><body><section class="cover"><div class="kicker">IRAN BRIEFING</div><h1>伊朗局势简报</h1><div class="score" style="color:'+data.color+'">'+data.score+'<small> / 100 · '+data.level+'</small></div><p class="lead">'+escapeHtml(data.summary)+'</p><p>'+escapeHtml(data.anchor)+' CST · 回溯 '+data.hours+' 小时</p><p>'+escapeHtml(data.trend)+'</p></section><main><section class="overview"><h2>烈度概览</h2>'+bars+'</section>'+renderMarkdown(body)+'</main></body></html>';
+  const bars=data.rows.map(r=>'<div class="bar-row"><span>'+escapeHtml(r.name)+'</span>'+(r.score===null?'<span class="muted">未评分（缺少完整依据）</span><b>—</b>':'<div class="bar"><div style="width:'+r.score/r.max*100+'%;background:'+data.color+'"></div></div><b>'+r.score+'/'+r.max+'</b>')+'</div>').join('');
+  const scoreLabel=data.score===null?'待评估':data.score+'<small> / 100 · '+data.level+'</small>';
+  const overview=data.score===null?'':'<section class="overview"><h2>烈度概览</h2>'+bars+'</section>';
+  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>伊朗局势简报 '+data.id+'</title><style>'+CSS+'</style></head><body><section class="cover"><div class="kicker">IRAN BRIEFING</div><h1>伊朗局势简报</h1><div class="score" style="color:'+data.color+'">'+scoreLabel+'</div><p class="lead">'+escapeHtml(data.summary)+'</p><p>'+escapeHtml(data.anchor)+' CST · 回溯 '+data.hours+' 小时</p><p>'+escapeHtml(data.trend)+'</p></section><main>'+overview+renderMarkdown(body)+'</main></body></html>';
 }
 const CSS = String.raw`
 @page { size:A4 landscape; margin:16mm 18mm 19mm; }
@@ -138,27 +141,57 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; background:#f5
 .bar div { height:100%; border-radius:8px; }
 @media screen { body { max-width:1100px; margin:24px auto; padding:30px; box-shadow:0 3px 24px #ddd; } }
 `;
-export function parseArgs(args) {
-  const result={input:DEFAULT_INPUT,outDir:path.join(ROOT,'output/briefings'),htmlOnly:false,check:false};
+export function currentReportDate(now=new Date()) {
+  return formatTime(now,'Asia/Shanghai').slice(0,10);
+}
+export function parseArgs(args, now=new Date()) {
+  const result={input:null,date:null,outDir:path.join(ROOT,'output/briefings'),htmlOnly:false,check:false};
   for(let i=0;i<args.length;i++) {
     const arg=args[i];
     if(arg==='--html-only') result.htmlOnly=true;
     else if(arg==='--check') result.check=true;
     else if(arg==='--help') result.help=true;
-    else if(arg==='--input' || arg==='--out-dir') {
+    else if(arg==='--input' || arg==='--out-dir' || arg==='--date') {
       if(!args[i+1] || args[i+1].startsWith('--')) throw new Error('参数缺少值：'+arg);
-      result[arg==='--input'?'input':'outDir']=path.resolve(args[++i]);
+      const value=args[++i];
+      if(arg==='--date') result.date=value;
+      else result[arg==='--input'?'input':'outDir']=path.resolve(value);
     } else throw new Error('未知参数：'+arg);
   }
+  if(result.input && result.date) throw new Error('--input 与 --date 不能同时指定');
+  if(!result.input && !result.date) result.date=currentReportDate(now);
+  if(result.date) validateReportDate(result.date);
   return result;
+}
+function validateReportDate(value) {
+  const match=/^(\d{4}-\d{2}-\d{2})(?:_(\d{2})(\d{2}))?$/.exec(value);
+  if(!match) throw new Error('--date 格式必须为 YYYY-MM-DD 或 YYYY-MM-DD_HHMM');
+  parseCst(match[1]+' '+(match[2] || '00')+':'+(match[3] || '00'));
+}
+export async function resolveInput(options, reportsDir=REPORTS_DIR) {
+  if(options.input) return options.input;
+  const date=options.date || currentReportDate();
+  validateReportDate(date);
+  const entries=await readdir(reportsDir,{withFileTypes:true});
+  const candidates=entries.filter(entry=>entry.isFile()).map(entry=>entry.name)
+    .filter(name=>/^iran-briefing-\d{4}-\d{2}-\d{2}_\d{4}\.md$/.test(name))
+    .filter(name=>{
+      const id=name.slice('iran-briefing-'.length,-3);
+      try {validateReportDate(id);} catch {return false;}
+      return date.length===10 ? id.startsWith(date+'_') : id===date;
+    }).sort();
+  if(!candidates.length) throw new Error('未找到日期 '+date+' 的 Markdown 简报，请先在 reports/ 中准备该日期的简报，或用 --date / --input 指定已有简报');
+  return path.join(reportsDir,candidates.at(-1));
 }
 export async function main(args=process.argv.slice(2)) {
   const options=parseArgs(args);
-  if(options.help) { console.log('node scripts/build_iran_briefing_pdf_v3.mjs [--input report.md] [--out-dir directory] [--html-only] [--check]'); return; }
-  const markdown=await readFile(options.input,'utf8');
+  if(options.help) { console.log('node scripts/build_iran_briefing_pdf_v3.mjs [--date YYYY-MM-DD[_HHMM] | --input report.md] [--out-dir directory] [--html-only] [--check]\n默认日期为北京时间今天（Asia/Shanghai），选择当天最新一期。没有当天简报时报错。'); return; }
+  const input=await resolveInput(options);
+  const markdown=await readFile(input,'utf8');
   const data=parseBriefing(markdown);
+  if(!options.input && path.basename(input)!=='iran-briefing-'+data.id+'.md') throw new Error('文件名日期与报告标题不一致：'+path.basename(input));
   const html=renderBriefing(markdown);
-  if(options.check) {console.log('校验通过：'+data.id+'，烈度 '+data.score+'/100'); return;}
+  if(options.check) {console.log('校验通过：'+data.id+'，烈度 '+(data.score??'暂不评分')+'/100'); return;}
   await mkdir(options.outDir,{recursive:true});
   const stem='iran-briefing-'+data.id;
   const htmlPath=path.join(options.outDir,stem+'.html');

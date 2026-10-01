@@ -17,7 +17,8 @@
     npm ci
     npx playwright install chromium
     npm test
-    npm run build -- --input reports/iran-briefing-2026-07-31_1300.md
+    npm run build
+    npm run build -- --date 2026-07-31
 
 无需浏览器的内容校验与 HTML 生成：
 
@@ -25,6 +26,8 @@
     node scripts/build_iran_briefing_pdf_v3.mjs --input reports/iran-briefing-2026-07-31_1300.md --html-only
 
 详细参数和输入约定见 [scripts/README.md](scripts/README.md)。研究规范见 [简报制作框架](notes/iran-briefing-framework.md)。
+
+未指定日期或输入文件时，默认日期为运行时北京时间今天（Asia/Shanghai），选择当天最新一期；没有当天简报时报错。--date YYYY-MM-DD 选择指定日期最新一期，--date YYYY-MM-DD_HHMM 精确指定一期；Python 与 V2 入口支持同样的参数。
 
 Markdown 是报告唯一内容来源。评分和时间窗口校验通过后生成封面、评分概览与完整正文；纽约时间自动处理夏令时。历史样稿保留用于对照，新输出采用自动分页。
 
