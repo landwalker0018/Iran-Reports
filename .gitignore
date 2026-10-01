@@ -105,3 +105,8 @@
 !pnpm-lock.yaml
 !yarn.lock
 !tsconfig.json
+
+# Local dependencies and generated output.
+node_modules/
+output/
+__pycache__/

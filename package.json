@@ -1,0 +1,17 @@
+{
+  "name": "iran-reports",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build_iran_briefing_pdf_v3.mjs",
+    "check": "node scripts/build_iran_briefing_pdf_v3.mjs --check",
+    "test": "node scripts/briefing.test.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.51.1"
+  }
+}

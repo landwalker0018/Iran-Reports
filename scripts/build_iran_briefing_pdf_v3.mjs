@@ -1,572 +1,187 @@
-import playwright from "/Users/chivalry/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.js";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { chromium } = playwright;
-const root = path.resolve(__dirname, "..");
-const outDir = path.join(root, "reports");
-const htmlPath = path.join(outDir, "iran-briefing-2026-05-30_2100-v3.html");
-const pdfPath = path.join(outDir, "iran-briefing-2026-05-30_2100-v3.pdf");
-const shotPath = path.join(outDir, "iran-briefing-2026-05-30_2100-v3-preview.png");
-
-const html = `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>伊朗局势简报 V3</title>
-<style>
-  @page { size: A4 landscape; margin: 0; }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: #e9e4dc;
-    color: #17191c;
-    font-family: "PingFang SC", "Hiragino Sans GB", "STHeiti", "Noto Sans CJK SC", Arial, sans-serif;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+export const DEFAULT_INPUT = path.join(ROOT, 'reports/iran-briefing-2026-05-30_2100.md');
+const WEIGHTS = [20, 15, 15, 15, 10, 8, 7, 10];
+const DIMENSIONS = ['军事行动', '战略升级信号', '霍尔木兹与航运', '核问题与外交谈判', '能源市场', '制裁与经济战', '国内稳定与信息环境', '第三方斡旋与外溢风险'];
+export function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function formatTime(date, timeZone) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+  }).formatToParts(date).map(p => [p.type, p.value]));
+  return parts.year+'-'+parts.month+'-'+parts.day+' '+parts.hour+':'+parts.minute;
+}
+function parseCst(value) {
+  const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!match) throw new Error('无效的北京时间：'+value);
+  const date = new Date(match[1]+'T'+match[2]+':'+(match[3] || '00')+'+08:00');
+  if (!Number.isFinite(date.getTime()) || formatTime(date,'Asia/Shanghai') !== match[1]+' '+match[2]) throw new Error('无效的日期：'+value);
+  return date;
+}
+export function parseBriefing(markdown) {
+  markdown = normalizeMarkdown(markdown);
+  if (/\{\{[^}]*\}\}/.test(markdown)) throw new Error('简报中仍有未填写的占位符');
+  const title = /^# (\d{4}-\d{2}-\d{2})_(\d{4}) \|.*?烈度\s+(\d+)\s*\|\s*(.+)$/m.exec(markdown);
+  if (!title) throw new Error('缺少报告标识：# YYYY-MM-DD_HHMM | 颜色 烈度 分数 | 趋势');
+  const window = /^信息窗口：(.+?)\s*->\s*(.+?)\s+CST\s*$/m.exec(markdown);
+  if (!window) throw new Error('缺少 CST 信息窗口');
+  const start = parseCst(window[1]);
+  const end = parseCst(window[2]);
+  if (end <= start) throw new Error('信息窗口结束时间必须晚于开始时间');
+  const anchor = title[1]+' '+title[2].slice(0,2)+':'+title[2].slice(2);
+  if (formatTime(end,'Asia/Shanghai') !== anchor) throw new Error('标题锚点与窗口结束时间不一致');
+  const hours = (end-start)/3600000;
+  const lookback = /^回溯长度：\s*(\d+(?:\.\d+)?)(h|d)\s*$/m.exec(markdown);
+  if (!lookback || Number(lookback[1])*(lookback[2]==='d'?24:1) !== hours) throw new Error('回溯长度与信息窗口不一致');
+  const scoreSection = /^## 烈度指数\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m.exec(markdown)?.[1];
+  if (!scoreSection) throw new Error('缺少烈度指数章节');
+  const rows = [...scoreSection.matchAll(/^\|\s*([^|]+?)\s*\|\s*(\d+)\s*\/\s*(\d+)\s*\|/gm)]
+    .map(m => ({ name:m[1].trim(), score:Number(m[2]), max:Number(m[3]) }));
+  if (rows.length !== WEIGHTS.length) throw new Error('烈度指数必须包含八个维度');
+  rows.forEach((row,i) => {
+    if (row.name !== DIMENSIONS[i] || row.max !== WEIGHTS[i] || row.score > row.max) throw new Error('烈度维度或分数无效：'+row.name);
+  });
+  const score = rows.reduce((sum,row) => sum+row.score,0);
+  const stated = /总分：\s*(\d+)\s*\/\s*100/.exec(scoreSection);
+  if (!stated || Number(stated[1]) !== score || Number(title[3]) !== score) throw new Error('首页、总分与分项之和不一致；计算值为 '+score);
+  const level = score>=80?'高烈度':score>=60?'明显紧张':score>=40?'中等波动':'低烈度';
+  const color = score>=80?'#a7352a':score>=60?'#e46f2e':score>=40?'#c99722':'#2f8f6b';
+  const summary = /^## 一句话结论\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m.exec(markdown)?.[1].trim();
+  if (!summary) throw new Error('缺少一句话结论');
+  return { id:title[1]+'_'+title[2], anchor, hours, start, end, score, rows, level, color, summary, trend:title[4].trim() };
+}
+// The repository uses a deliberately small Markdown subset. HTML is always escaped.
+function normalizeMarkdown(markdown) {
+  return markdown.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+}
+function inline(text) {
+  return text.split(/(https?:\/\/[^\s<>]+)/g).map(part => {
+    if (!/^https?:\/\//.test(part)) return escapeHtml(part);
+    return '<a href="'+escapeHtml(part)+'">'+escapeHtml(part)+'</a>';
+  }).join('');
+}
+export function renderMarkdown(markdown) {
+  const lines=normalizeMarkdown(markdown).split('\n');
+  const out=[];
+  let i=0;
+  const cells=line => line.trim().replace(/^\||\|$/g,'').split('|').map(s=>s.trim());
+  while (i<lines.length) {
+    const line=lines[i];
+    if (!line.trim()) { i++; continue; }
+    if (/^\|/.test(line) && /^\|[\s:|\-]+\|\s*$/.test(lines[i+1] || '')) {
+      const headings=cells(line); i+=2; const rows=[];
+      while (i<lines.length && /^\|/.test(lines[i])) {
+        const values=cells(lines[i++]);
+        if (values.length !== headings.length) throw new Error('Markdown 表格列数不一致');
+        rows.push('<tr>'+values.map(v=>'<td>'+inline(v)+'</td>').join('')+'</tr>');
+      }
+      out.push('<table><thead><tr>'+headings.map(v=>'<th>'+inline(v)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table>'); continue;
+    }
+    if (/^`{3}/.test(line)) {
+      i++; const code=[]; while(i<lines.length && !/^`{3}/.test(lines[i])) code.push(lines[i++]);
+      if (i===lines.length) throw new Error('Markdown 代码块未闭合');
+      i++; out.push('<pre>'+escapeHtml(code.join('\n'))+'</pre>'); continue;
+    }
+    const heading=/^(#{1,3})\s+(.+)$/.exec(line);
+    if (heading) {out.push('<h'+heading[1].length+'>'+inline(heading[2])+'</h'+heading[1].length+'>'); i++; continue;}
+    if (/^---\s*$/.test(line)) {out.push('<hr>'); i++; continue;}
+    if (/^- /.test(line)) {
+      const items=[]; while(i<lines.length && /^- /.test(lines[i])) items.push('<li>'+inline(lines[i++].slice(2))+'</li>');
+      out.push('<ul>'+items.join('')+'</ul>'); continue;
+    }
+    const paragraph=[];
+    while(i<lines.length && lines[i].trim() && !/^(#{1,3}\s|\||- |---\s*$|`{3})/.test(lines[i])) paragraph.push(lines[i++]);
+    if (!paragraph.length) paragraph.push(lines[i++]);
+    out.push('<p>'+paragraph.map(inline).join('<br>')+'</p>');
   }
-  .page {
-    width: 297mm;
-    height: 210mm;
-    page-break-after: always;
-    position: relative;
-    overflow: hidden;
-    background: #fbfaf6;
-    padding: 15mm 18mm;
+  return out.join('\n');
+}
+export function renderBriefing(markdown) {
+  markdown = normalizeMarkdown(markdown);
+  const data=parseBriefing(markdown);
+  // Both time zones derive from the same instants, including New York daylight saving.
+  const cst=formatTime(data.start,'Asia/Shanghai')+' -> '+formatTime(data.end,'Asia/Shanghai')+' CST';
+  const et=formatTime(data.start,'America/New_York')+' -> '+formatTime(data.end,'America/New_York')+' ET';
+  let body=markdown.replace(/^信息窗口：.*$/gm,'信息窗口：'+cst).replace(/^对应纽约时间：.*$/gm,'对应纽约时间：'+et);
+  body=body.replace(/^# .*\r?\n/gm,'');
+  const bars=data.rows.map(r=>'<div class="bar-row"><span>'+escapeHtml(r.name)+'</span><div class="bar"><div style="width:'+r.score/r.max*100+'%;background:'+data.color+'"></div></div><b>'+r.score+'/'+r.max+'</b></div>').join('');
+  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>伊朗局势简报 '+data.id+'</title><style>'+CSS+'</style></head><body><section class="cover"><div class="kicker">IRAN BRIEFING</div><h1>伊朗局势简报</h1><div class="score" style="color:'+data.color+'">'+data.score+'<small> / 100 · '+data.level+'</small></div><p class="lead">'+escapeHtml(data.summary)+'</p><p>'+escapeHtml(data.anchor)+' CST · 回溯 '+data.hours+' 小时</p><p>'+escapeHtml(data.trend)+'</p></section><main><section class="overview"><h2>烈度概览</h2>'+bars+'</section>'+renderMarkdown(body)+'</main></body></html>';
+}
+const CSS = String.raw`
+@page { size:A4 landscape; margin:16mm 18mm 19mm; }
+* { box-sizing:border-box; }
+body { margin:0; color:#20242a; background:#fbfaf6; font-family:'Microsoft YaHei','PingFang SC','Noto Sans CJK SC',sans-serif; font-size:12px; line-height:1.65; print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+.cover { min-height:150mm; padding:15mm 12mm; border-left:8px solid #a7352a; break-after:page; }
+.kicker { color:#a7352a; letter-spacing:.15em; }
+h1 { font-size:42px; margin:8mm 0; }
+.score { font-size:62px; font-weight:700; }
+.score small { font-size:18px; }
+.lead { font-size:23px; max-width:220mm; }
+h2 { font-size:23px; color:#8f2b25; border-bottom:1px solid #d9d1c7; padding-bottom:6px; margin-top:24px; break-after:avoid; }
+h3 { color:#8f2b25; break-after:avoid; }
+p,li { orphans:3; widows:3; overflow-wrap:anywhere; break-inside:avoid; }
+a { color:#3d6c91; overflow-wrap:anywhere; }
+table { width:100%; border-collapse:collapse; font-size:11px; margin:12px 0; break-inside:avoid; }
+thead { display:table-header-group; }
+tr { break-inside:avoid; }
+th { background:#8f2b25; color:white; text-align:left; }
+th,td { border:1px solid #d9d1c7; padding:8px; vertical-align:top; overflow-wrap:anywhere; }
+tr:nth-child(even) { background:#f5f1ea; }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; background:#f5f1ea; padding:12px; }
+.overview { break-inside:avoid; }
+.bar-row { display:grid; grid-template-columns:52mm 1fr 18mm; align-items:center; gap:12px; margin:7px 0; }
+.bar { height:9px; background:#e9e1d8; border-radius:8px; }
+.bar div { height:100%; border-radius:8px; }
+@media screen { body { max-width:1100px; margin:24px auto; padding:30px; box-shadow:0 3px 24px #ddd; } }
+`;
+export function parseArgs(args) {
+  const result={input:DEFAULT_INPUT,outDir:path.join(ROOT,'output/briefings'),htmlOnly:false,check:false};
+  for(let i=0;i<args.length;i++) {
+    const arg=args[i];
+    if(arg==='--html-only') result.htmlOnly=true;
+    else if(arg==='--check') result.check=true;
+    else if(arg==='--help') result.help=true;
+    else if(arg==='--input' || arg==='--out-dir') {
+      if(!args[i+1] || args[i+1].startsWith('--')) throw new Error('参数缺少值：'+arg);
+      result[arg==='--input'?'input':'outDir']=path.resolve(args[++i]);
+    } else throw new Error('未知参数：'+arg);
   }
-  .page:last-child { page-break-after: auto; }
-  .deck {
-    position: absolute;
-    left: 18mm;
-    right: 18mm;
-    bottom: 7mm;
-    display: flex;
-    justify-content: space-between;
-    color: #7b7268;
-    font-size: 10.5px;
-    letter-spacing: .02em;
-  }
-  .cover {
-    color: #fff;
-    padding: 0;
-    background:
-      linear-gradient(115deg, rgba(25, 24, 23, .25), transparent 42%),
-      radial-gradient(circle at 78% 22%, rgba(244, 178, 97, .28), transparent 28%),
-      linear-gradient(135deg, #7b1f22 0%, #a83a2a 48%, #d46529 100%);
-  }
-  .cover .grain {
-    position: absolute;
-    inset: 0;
-    opacity: .18;
-    background-image:
-      linear-gradient(30deg, transparent 0 48%, rgba(255,255,255,.5) 49%, transparent 50% 100%),
-      linear-gradient(150deg, transparent 0 48%, rgba(255,255,255,.35) 49%, transparent 50% 100%);
-    background-size: 38px 38px;
-  }
-  .cover-inner {
-    position: absolute;
-    inset: 17mm;
-    border: 1px solid rgba(255,255,255,.28);
-    padding: 18mm;
-  }
-  .kicker {
-    font-size: 13px;
-    color: #f5d7be;
-    text-transform: uppercase;
-    letter-spacing: .12em;
-  }
-  h1 {
-    margin: 7mm 0 0;
-    font-size: 44px;
-    line-height: 1.04;
-    font-weight: 750;
-    letter-spacing: 0;
-  }
-  .cover-sub {
-    margin-top: 7mm;
-    max-width: 154mm;
-    font-size: 18px;
-    line-height: 1.62;
-    color: #fff8ef;
-  }
-  .score-lockup {
-    position: absolute;
-    right: 17mm;
-    top: 18mm;
-    width: 52mm;
-    height: 52mm;
-    border-radius: 50%;
-    border: 2px solid rgba(255,255,255,.72);
-    display: grid;
-    place-items: center;
-    text-align: center;
-    background: rgba(255,255,255,.08);
-  }
-  .score-lockup strong { display:block; font-size: 42px; line-height: .92; }
-  .score-lockup span { display:block; font-size: 10px; color:#ffe4cf; margin-top: 3px; }
-  .meta-strip {
-    position: absolute;
-    left: 17mm;
-    right: 17mm;
-    bottom: 18mm;
-    display: grid;
-    grid-template-columns: 1.2fr .8fr .8fr 1fr;
-    gap: 10px;
-  }
-  .meta {
-    background: rgba(255,255,255,.11);
-    border: 1px solid rgba(255,255,255,.22);
-    padding: 13px 14px;
-    min-height: 62px;
-  }
-  .meta small { display:block; color:#f2c5a5; font-size: 10px; margin-bottom: 6px; }
-  .meta b { font-size: 15.5px; font-weight: 650; }
-  .titlebar {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-bottom: 1.2px solid #d8cec2;
-    padding-bottom: 10px;
-    margin-bottom: 15px;
-  }
-  .titlebar h2 {
-    margin: 0;
-    color: #8f2b25;
-    font-size: 24px;
-    line-height: 1.15;
-    letter-spacing: 0;
-  }
-  .titlebar .right {
-    font-size: 11px;
-    color: #766d63;
-    text-align: right;
-    line-height: 1.5;
-  }
-  .grid-3 { display: grid; grid-template-columns: 1.05fr 1fr 1fr; gap: 15px; }
-  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-  .card {
-    background: #fff;
-    border: 1px solid #ddd4c8;
-    border-radius: 8px;
-    padding: 16px;
-    box-shadow: 0 6px 16px rgba(60, 43, 28, .05);
-  }
-  .card.dark {
-    background: #23262a;
-    color: #fff;
-    border-color: #23262a;
-  }
-  .card h3 {
-    margin: 0 0 8px;
-    font-size: 14px;
-    color: #8f2b25;
-  }
-  .card.dark h3 { color: #f5bd90; }
-  .lead {
-    font-size: 18px;
-    line-height: 1.62;
-    font-weight: 650;
-  }
-  .point {
-    display: grid;
-    grid-template-columns: 24px 1fr;
-    gap: 10px;
-    font-size: 12.8px;
-    line-height: 1.62;
-    margin: 8px 0;
-  }
-  .num {
-    width: 23px;
-    height: 23px;
-    border-radius: 50%;
-    background: #a9362a;
-    color: #fff;
-    display: inline-grid;
-    place-items: center;
-    font-size: 12px;
-    font-weight: 700;
-  }
-  .metric {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin: 5px 0 2px;
-  }
-  .metric b { font-size: 27px; color: #a9362a; }
-  .metric span { font-size: 11px; color: #71685f; }
-  .bar-row {
-    display: grid;
-    grid-template-columns: 38mm 1fr 15mm;
-    align-items: center;
-    gap: 8px;
-    margin: 8px 0;
-    font-size: 11px;
-  }
-  .bar {
-    height: 9px;
-    border-radius: 20px;
-    background: #e9e1d8;
-    overflow: hidden;
-  }
-  .fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg,#d89929,#df6d2d,#a9362a); }
-  .tag {
-    display: inline-block;
-    padding: 3px 7px;
-    border-radius: 999px;
-    background: #f1e3d6;
-    color: #8f2b25;
-    font-size: 9.5px;
-    font-weight: 650;
-    margin: 2px 3px 2px 0;
-  }
-  .tag.green { background:#dfeee7; color:#267052; }
-  .tag.yellow { background:#fff1c9; color:#8a6616; }
-  .tag.red { background:#f5d6d1; color:#9b2d24; }
-  .timeline {
-    position: relative;
-    margin-top: 5px;
-    padding-left: 25px;
-  }
-  .timeline:before {
-    content: "";
-    position: absolute;
-    left: 8px;
-    top: 4px;
-    bottom: 5px;
-    width: 2px;
-    background: #d8cec2;
-  }
-  .event {
-    position: relative;
-    display: grid;
-    grid-template-columns: 30mm 1fr 25mm;
-    gap: 11px;
-    padding: 9px 0 11px;
-    border-bottom: 1px solid #eee7df;
-    font-size: 12px;
-    line-height: 1.55;
-  }
-  .event:before {
-    content:"";
-    position:absolute;
-    left:-22px;
-    top: 10px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background:#df6d2d;
-    border:2px solid #fbfaf6;
-  }
-  .event .time { color:#8a7a6c; font-size: 11px; }
-  .event b { font-size: 13px; }
-  .pill {
-    align-self: start;
-    justify-self: end;
-    border: 1px solid #d8cec2;
-    padding: 3px 6px;
-    border-radius: 5px;
-    color: #8f2b25;
-    font-size: 10px;
-    font-weight: 650;
-  }
-  .hormuz {
-    height: 104mm;
-    position: relative;
-    background: linear-gradient(180deg,#f4efe7,#fff);
-    overflow:hidden;
-  }
-  .sea {
-    position:absolute;
-    inset: 13mm 8mm 12mm 8mm;
-  }
-  .legend {
-    display: grid;
-    gap: 6px;
-    font-size: 12px;
-    line-height: 1.55;
-  }
-  .legend-item {
-    border-left: 4px solid #df6d2d;
-    padding-left: 8px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 11px;
-    line-height: 1.5;
-  }
-  th {
-    text-align: left;
-    background: #8f2b25;
-    color: white;
-    padding: 9px 10px;
-    font-weight: 650;
-  }
-  td {
-    border: 1px solid #ddd4c8;
-    padding: 9px 10px;
-    vertical-align: top;
-    background: #fff;
-  }
-  tr:nth-child(even) td { background: #fbf6ef; }
-  .watch {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 11px;
-  }
-  .watch .card { min-height: 37mm; }
-  .small { font-size: 11.3px; line-height: 1.6; color:#3c3c3c; }
-  .muted { color: #71685f; }
-  .source-list {
-    columns: 2;
-    column-gap: 16px;
-    font-size: 11px;
-    line-height: 1.58;
-  }
-  .source-list p { break-inside: avoid; margin: 0 0 8px; }
-  .stamp {
-    position:absolute;
-    top: 13mm;
-    right: 15mm;
-    border: 1.4px solid #a9362a;
-    color: #a9362a;
-    padding: 7px 10px;
-    border-radius: 6px;
-    transform: rotate(2deg);
-    font-size: 11px;
-    font-weight: 750;
-  }
-</style>
-</head>
-<body>
-  <section class="page cover">
-    <div class="grain"></div>
-    <div class="cover-inner">
-      <div class="kicker">OpenClaw-style briefing · Trial rebuild</div>
-      <h1>伊朗局势<br>48小时回溯简报</h1>
-      <div class="cover-sub">从“事件罗列”改成“决策态势板”：先给判断，再给证据、风险阀门和下一步观察指标。</div>
-      <div class="score-lockup"><div><strong>66</strong><span>烈度 / 100<br>中高位</span></div></div>
-      <div class="meta-strip">
-        <div class="meta"><small>锚点时间</small><b>2026-05-30 21:00 CST</b></div>
-        <div class="meta"><small>回溯窗口</small><b>48小时</b></div>
-        <div class="meta"><small>趋势</small><b>降温中带扰动</b></div>
-        <div class="meta"><small>主变量</small><b>霍尔木兹 + 核谈判</b></div>
-      </div>
-    </div>
-  </section>
-
-  <section class="page">
-    <div class="titlebar"><h2>01｜先读结论</h2><div class="right">信息窗口：2026-05-28 21:00 -> 2026-05-30 21:00 CST<br>对应纽约时间：2026-05-28 09:00 -> 2026-05-30 09:00 ET</div></div>
-    <div class="grid-3">
-      <div class="card dark">
-        <h3>一句话结论</h3>
-        <div class="lead">协议预期正在压低市场烈度，但霍尔木兹通航安排仍没有被事实验证。</div>
-        <p class="small muted" style="color:#d2c7ba">这意味着简报不能写成“局势已缓和”，更准确的是“谈判定价领先于安全现实”。</p>
-      </div>
-      <div class="card">
-        <h3>三条核心判断</h3>
-        <div class="point"><span class="num">1</span><span>主线从军事升级转向谈判定价，白宫讨论协议但未最终宣布批准。</span></div>
-        <div class="point"><span class="num">2</span><span>霍尔木兹是协议成败核心变量：通航、清雷、收费、封锁解除彼此绑定。</span></div>
-        <div class="point"><span class="num">3</span><span>油价提前反映乐观预期，但实际航运恢复仍需船东、保险与军方安全机制确认。</span></div>
-      </div>
-      <div class="card">
-        <h3>读者该盯什么</h3>
-        <span class="tag red">白宫最终口径</span>
-        <span class="tag red">伊朗外交部确认</span>
-        <span class="tag">霍尔木兹清雷</span>
-        <span class="tag">通航船只数量</span>
-        <span class="tag yellow">Brent 90/100</span>
-        <span class="tag green">第三方斡旋</span>
-        <p class="small">若没有“双方正式声明 + 通航数据回升”，市场降温只能视为预期交易，不是风险解除。</p>
-      </div>
-    </div>
-    <div style="height:10px"></div>
-    <div class="grid-2">
-      <div class="card">
-        <h3>烈度拆解</h3>
-        ${[
-          ["军事行动",13,20],["战略升级",9,15],["霍尔木兹/航运",12,15],["核谈判",10,15],["能源市场",6,10],["制裁经济",6,8],["国内稳定",3,7],["第三方斡旋",7,10]
-        ].map(([n,s,t]) => `<div class="bar-row"><span>${n}</span><div class="bar"><div class="fill" style="width:${Math.round(s/t*100)}%"></div></div><b>${s}/${t}</b></div>`).join("")}
-      </div>
-      <div class="card">
-        <h3>证据强弱分层</h3>
-        <table>
-          <tr><th>层级</th><th>用途</th><th>本次样例</th></tr>
-          <tr><td>A</td><td>可作为事实底座</td><td>AP、CENTCOM、U.S. Treasury、新华网</td></tr>
-          <tr><td>B</td><td>补充现场和解释分歧</td><td>Reuters/MarketScreener、Anadolu/IRNA转述</td></tr>
-          <tr><td>D</td><td>只能表示市场情绪</td><td>Polymarket 相关合约价格</td></tr>
-        </table>
-        <p class="small">重大结论只基于 A/B 层；D 层不单独确认事实。</p>
-      </div>
-    </div>
-    <div class="deck"><span>Iran Briefing V3</span><span>1 / 5</span></div>
-  </section>
-
-  <section class="page">
-    <div class="titlebar"><h2>02｜48小时事件链</h2><div class="right">排序规则：按发生/报道进入窗口时间倒序整合<br>重点：识别哪些是事实，哪些是协议解释权争夺</div></div>
-    <div class="grid-2">
-      <div class="card">
-        <h3>事件时间轴</h3>
-        <div class="timeline">
-          <div class="event"><div class="time">5/29 22:13 CST</div><div><b>白宫讨论是否批准美伊协议</b><br>AP称特朗普与国家安全团队讨论延长停火和重开霍尔木兹，会后高级官员称尚无决定。</div><div class="pill">外交 A</div></div>
-          <div class="event"><div class="time">5/29-5/30</div><div><b>霍尔木兹条款出现解释分歧</b><br>美方口径强调无收费通航和清雷；伊朗方面称尚未达成最终理解，并否认部分条款解释。</div><div class="pill">航运 B</div></div>
-          <div class="event"><div class="time">5/28 起</div><div><b>美国财政部继续施压</b><br>目标指向伊朗军方油品收入及与霍尔木兹收费相关机制。</div><div class="pill">制裁 A</div></div>
-          <div class="event"><div class="time">5/28 前后</div><div><b>小规模军事摩擦延续</b><br>CENTCOM、新华网信息显示，无人机、导弹、空袭和反击仍存在。</div><div class="pill">军事 A/B</div></div>
-          <div class="event"><div class="time">5/30 早间</div><div><b>油价明显回落</b><br>Brent 收于 92.05 美元/桶，周跌约 11%，市场押注协议。</div><div class="pill">市场 A</div></div>
-        </div>
-      </div>
-      <div class="card">
-        <h3>本窗口的真正矛盾</h3>
-        <table>
-          <tr><th>表层事件</th><th>深层问题</th><th>简报写法</th></tr>
-          <tr><td>停火延长接近</td><td>协议是否已被双方政治授权</td><td>“接近但未完成”</td></tr>
-          <tr><td>海峡重开</td><td>通航规则、收费权、清雷责任</td><td>“通航安排是核心交换项”</td></tr>
-          <tr><td>油价回落</td><td>预期交易领先于物理通航</td><td>“市场降温不等于供应链恢复”</td></tr>
-          <tr><td>低烈度冲突</td><td>谈判筹码与误判风险并存</td><td>“军事端没有完全停火”</td></tr>
-        </table>
-        <div style="height:8px"></div>
-        <div class="card" style="box-shadow:none;background:#fff7eb">
-          <h3>一句编辑原则</h3>
-          <p class="small">不要把“美方透露的协议草案”写成“美伊共同确认的最终协议”；这是本简报质量的分水岭。</p>
-        </div>
-      </div>
-    </div>
-    <div class="deck"><span>Iran Briefing V3</span><span>2 / 5</span></div>
-  </section>
-
-  <section class="page">
-    <div class="titlebar"><h2>03｜霍尔木兹：风险阀门</h2><div class="right">核心判断：通航安排决定能源风险溢价<br>不是“有没有协议”，而是“船敢不敢走”</div></div>
-    <div class="grid-2">
-      <div class="card hormuz">
-        <h3>抽象态势图</h3>
-        <svg class="sea" viewBox="0 0 720 300" aria-label="Hormuz schematic">
-          <defs>
-            <linearGradient id="water" x1="0" x2="1"><stop offset="0%" stop-color="#d7e6ed"/><stop offset="100%" stop-color="#b9d4e0"/></linearGradient>
-            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#2f6f8f"/></marker>
-          </defs>
-          <rect x="0" y="0" width="720" height="300" rx="18" fill="url(#water)"/>
-          <path d="M0 35 C130 76, 195 99, 300 108 C420 118, 520 85, 720 42 L720 0 L0 0 Z" fill="#e8d0a8"/>
-          <path d="M0 260 C180 215, 300 205, 410 218 C530 232, 620 255, 720 238 L720 300 L0 300 Z" fill="#dec39a"/>
-          <path d="M105 187 C220 136, 355 132, 510 156" fill="none" stroke="#2f6f8f" stroke-width="7" stroke-linecap="round" marker-end="url(#arrow)"/>
-          <path d="M98 205 C260 164, 404 166, 575 188" fill="none" stroke="#2f6f8f" stroke-width="3" stroke-dasharray="8 8" opacity=".65"/>
-          <circle cx="360" cy="151" r="36" fill="rgba(169,54,42,.16)" stroke="#a9362a" stroke-width="2"/>
-          <text x="360" y="145" text-anchor="middle" font-size="15" fill="#8f2b25" font-weight="700">通航</text>
-          <text x="360" y="165" text-anchor="middle" font-size="12" fill="#8f2b25">清雷/收费/封锁</text>
-          <text x="72" y="58" font-size="16" fill="#6f4f2c" font-weight="700">伊朗岸线</text>
-          <text x="560" y="267" font-size="16" fill="#6f4f2c" font-weight="700">阿曼/海湾通道</text>
-          <rect x="510" y="48" width="150" height="44" rx="9" fill="#fff7eb" stroke="#d8b68f"/>
-          <text x="585" y="74" text-anchor="middle" font-size="13" fill="#6f4f2c">协议预期降温油价</text>
-          <rect x="42" y="222" width="170" height="44" rx="9" fill="#fff7eb" stroke="#d8b68f"/>
-          <text x="127" y="248" text-anchor="middle" font-size="13" fill="#6f4f2c">实际通航尚待验证</text>
-        </svg>
-      </div>
-      <div>
-        <div class="card">
-          <h3>四个卡点</h3>
-          <div class="legend">
-            <div class="legend-item"><b>通航权：</b>是否无收费、无额外政治条件开放。</div>
-            <div class="legend-item"><b>安全责任：</b>清雷、护航、误击责任如何分配。</div>
-            <div class="legend-item"><b>制裁节奏：</b>港口封锁与油品金融限制何时解除。</div>
-            <div class="legend-item"><b>市场验证：</b>船东、保险和能源买家是否恢复常态路径。</div>
-          </div>
-        </div>
-        <div style="height:10px"></div>
-        <div class="card">
-          <h3>能源端写法</h3>
-          <table>
-            <tr><th>指标</th><th>本窗口</th><th>解读</th></tr>
-            <tr><td>Brent</td><td>92.05 美元/桶</td><td>周跌约 11%，反映协议预期</td></tr>
-            <tr><td>WTI</td><td>87.36 美元/桶</td><td>同步回落</td></tr>
-            <tr><td>通航量</td><td>仍低于战前</td><td>风险没有真正出清</td></tr>
-          </table>
-        </div>
-      </div>
-    </div>
-    <div class="deck"><span>Iran Briefing V3</span><span>3 / 5</span></div>
-  </section>
-
-  <section class="page">
-    <div class="titlebar"><h2>04｜情景推演与观察清单</h2><div class="right">用途：让读者知道下一份简报该验证什么<br>概率不足时，用等级替代虚假精确数字</div></div>
-    <div class="grid-2">
-      <div class="card">
-        <h3>三情景</h3>
-        <table>
-          <tr><th>情景</th><th>等级</th><th>触发条件</th><th>市场/安全含义</th></tr>
-          <tr><td>缓和落地</td><td>中高</td><td>双方同步确认；清雷与解除封锁启动</td><td>油价继续回落，航运逐步恢复</td></tr>
-          <tr><td>僵持延长</td><td>中</td><td>继续交换文本但核材料、收费、黎巴嫩条件未解决</td><td>油价区间震荡，军事端维持低烈度</td></tr>
-          <tr><td>再升级</td><td>中低</td><td>扣船、袭船、误击或以黎方向扩大</td><td>保险费率跳升，Brent 快速反弹</td></tr>
-        </table>
-      </div>
-      <div class="card">
-        <h3>结论矩阵</h3>
-        <table>
-          <tr><th>结论</th><th>置信度</th><th>依据</th></tr>
-          <tr><td>协议接近但未完成</td><td>高</td><td>AP与伊朗公开口径均未确认最终协议</td></tr>
-          <tr><td>霍尔木兹是核心交换项</td><td>高</td><td>通航、清雷、收费、制裁同步出现</td></tr>
-          <tr><td>军事端没有完全停火</td><td>中高</td><td>CENTCOM、新华网均有摩擦线索</td></tr>
-          <tr><td>油价回落是预期交易</td><td>高</td><td>通航恢复尚未被实际数据确认</td></tr>
-        </table>
-      </div>
-    </div>
-    <div style="height:10px"></div>
-    <div class="watch">
-      <div class="card"><h3>官方口径</h3><p class="small">白宫、伊朗外交部、IAEA 是否发布可相互印证的正式文本。</p></div>
-      <div class="card"><h3>海峡数据</h3><p class="small">油轮通航数量、AIS异常、保险费率和清雷/护航安排。</p></div>
-      <div class="card"><h3>军事误判</h3><p class="small">CENTCOM、IRGC、以色列和黎巴嫩方向是否出现新攻击。</p></div>
-      <div class="card"><h3>市场阈值</h3><p class="small">Brent 跌破 90 代表缓和定价延续；反弹 100 以上说明风险重估。</p></div>
-    </div>
-    <div class="deck"><span>Iran Briefing V3</span><span>4 / 5</span></div>
-  </section>
-
-  <section class="page">
-    <div class="stamp">试制版 · 需复核实时数据</div>
-    <div class="titlebar"><h2>05｜来源、边界与下一版改进</h2><div class="right">原则：来源可追溯，判断可拆解，传闻不落地</div></div>
-    <div class="grid-2">
-      <div class="card">
-        <h3>来源清单</h3>
-        <div class="source-list">
-          <p><b>AP</b>：Trump weighs whether to go with Iran deal but has not decided yet, 2026-05-29.</p>
-          <p><b>CENTCOM</b>：Statement from CENTCOM on Recent Iranian Aggression, 2026-05-28.</p>
-          <p><b>U.S. Treasury</b>：Economic Fury Targets Illicit Oil Revenue Fueling Iran's Military, 2026-05-28.</p>
-          <p><b>新华网</b>：新闻分析丨中东两线交火会否拖累美伊停火？2026-05-28.</p>
-          <p><b>Reuters / MarketScreener</b>：Oil falls on hopes for US-Iran ceasefire agreement, 2026-05-29.</p>
-          <p><b>Anadolu / IRNA 转述</b>：Iran says message exchanges with US continue, no final understanding reached, 2026-05-29.</p>
-          <p><b>Polymarket</b>：仅作为市场情绪参考，不作为事实确认。</p>
-        </div>
-      </div>
-      <div class="card">
-        <h3>边界说明</h3>
-        <p class="small">本 PDF 是基于既有试制简报重新设计的版式与分析呈现。正式生产时，应在生成前重新抓取：Brent/WTI 实时价格、Polymarket 合约报价、霍尔木兹通航数据、官方声明原文。</p>
-        <h3>下一版应补强</h3>
-        <div class="point"><span class="num">1</span><span>加入自动来源抓取表：来源、发布时间、可信度、是否进入结论。</span></div>
-        <div class="point"><span class="num">2</span><span>加入上一窗口对比页：烈度变化、事件增减、市场指标变化。</span></div>
-        <div class="point"><span class="num">3</span><span>加入“可复制到飞书”的纯文本摘要页，方便交付。</span></div>
-      </div>
-    </div>
-    <div class="deck"><span>Iran Briefing V3</span><span>5 / 5</span></div>
-  </section>
-</body>
-</html>`;
-
-await mkdir(outDir, { recursive: true });
-await writeFile(htmlPath, html, "utf8");
-
-const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage({ viewport: { width: 1600, height: 1131 }, deviceScaleFactor: 1 });
-await page.goto(`file://${htmlPath}`, { waitUntil: "networkidle" });
-await page.screenshot({ path: shotPath, fullPage: false });
-await page.pdf({
-  path: pdfPath,
-  format: "A4",
-  landscape: true,
-  printBackground: true,
-  preferCSSPageSize: true,
-});
-await browser.close();
-
-console.log(pdfPath);
-console.log(htmlPath);
-console.log(shotPath);
+  return result;
+}
+export async function main(args=process.argv.slice(2)) {
+  const options=parseArgs(args);
+  if(options.help) { console.log('node scripts/build_iran_briefing_pdf_v3.mjs [--input report.md] [--out-dir directory] [--html-only] [--check]'); return; }
+  const markdown=await readFile(options.input,'utf8');
+  const data=parseBriefing(markdown);
+  const html=renderBriefing(markdown);
+  if(options.check) {console.log('校验通过：'+data.id+'，烈度 '+data.score+'/100'); return;}
+  await mkdir(options.outDir,{recursive:true});
+  const stem='iran-briefing-'+data.id;
+  const htmlPath=path.join(options.outDir,stem+'.html');
+  await writeFile(htmlPath,html,'utf8');
+  console.log(htmlPath);
+  if(options.htmlOnly) return;
+  let chromium;
+  try { ({chromium}=await import('playwright')); }
+  catch(error) {throw new Error('无法加载 Playwright，请先执行 npm install 和 npx playwright install chromium。HTML 已生成。',{cause:error});}
+  const browser=await chromium.launch({headless:true});
+  try {
+    const page=await browser.newPage({viewport:{width:1200,height:850},deviceScaleFactor:1});
+    await page.goto(pathToFileURL(htmlPath).href,{waitUntil:'load'});
+    await page.evaluate(()=>document.fonts.ready);
+    await page.emulateMedia({media:'print'});
+    const overflow=await page.evaluate(()=>[...document.querySelectorAll('body *')].filter(el=>el.scrollWidth>el.clientWidth+2 && el.clientWidth>0 && getComputedStyle(el).display!=='inline').map(el=>el.tagName+': '+el.textContent.slice(0,60)));
+    if(overflow.length) throw new Error('检测到横向溢出，停止 PDF 导出：'+overflow.join('; '));
+    await page.pdf({path:path.join(options.outDir,stem+'.pdf'),format:'A4',landscape:true,printBackground:true,preferCSSPageSize:true,displayHeaderFooter:true,headerTemplate:'<span></span>',footerTemplate:'<div style="font-size:9px;width:100%;padding:0 18mm;display:flex;justify-content:space-between;color:#68707a"><span>Iran Briefing '+data.id+'</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>'});
+    await page.emulateMedia({media:'screen'});
+    await page.screenshot({path:path.join(options.outDir,stem+'-preview.png'),fullPage:true});
+    console.log(path.join(options.outDir,stem+'.pdf'));
+  } finally {await browser.close();}
+}
+if (typeof process !== 'undefined' && process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
+  main().catch(error=>{console.error(error.message);process.exitCode=1;});
+}
